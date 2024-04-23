@@ -8,33 +8,59 @@ from pathlib import Path
 from collections import defaultdict
 import torch.utils.data as data_utils
 
+def get_datasets(self, train_labels, train_total_power, val_labels, val_total_power, test_labels, test_total_power):
+            #val_end = int(self.val_size * len(self.x))
+            val = NILMDataset(val_labels, val_total_power,
+                              window_size=480, stride=30)
+            train = NILMDataset(train_labels, train_total_power,
+                                window_size=480, stride=30)
+            test = NILMDataset(test_labels, test_total_power,
+                              window_size=480, stride=30)
+            return train, val, test
+
+def get_bert_datasets(self, train_labels, train_total_power, val_labels, val_total_power,test_labels, test_total_power, mask_prob=0.25):
+            #val_end = int(self.val_size * len(self.x))
+            val = NILMDataset(val_labels, val_total_power,
+                              window_size=480, stride=30)
+            train = BERTDataset(train_labels, train_total_power,
+                                window_size=480, stride=30, mask_prob=mask_prob)
+            test = NILMDataset(test_labels, test_total_power,
+                              window_size=480, stride=30)
+            return train, val, test
 
 class AbstractDataset(metaclass=ABCMeta):
     def __init__(self, args, stats=None):
-        self.house_indicies = args.house_indicies
+        #self.house_indicies = args.house_indicies
         self.appliance_names = args.appliance_names
         self.normalize = args.normalize
         self.sampling = args.sampling
-        self.cutoff = [args.cutoff[i]
-                       for i in ['aggregate'] + self.appliance_names]
+        #self.cutoff = [args.cutoff[i]
+        #               for i in ['aggregate'] + self.appliance_names]
 
-        self.threshold = [args.threshold[i] for i in self.appliance_names]
-        self.min_on = [args.min_on[i] for i in self.appliance_names]
-        self.min_off = [args.min_off[i] for i in self.appliance_names]
+        #self.threshold = [args.threshold[i] for i in self.appliance_names]
+        #self.min_on = [args.min_on[i] for i in self.appliance_names]
+        #self.min_off = [args.min_off[i] for i in self.appliance_names]
 
-        self.val_size = args.validation_size
+        #self.val_size = args.validation_size
         self.window_size = args.window_size
         self.window_stride = args.window_stride
 
-        self.x, self.y = self.load_data()
-        self.status = self.compute_status(self.y)
+        #self.x, self.y = self.load_data()
+        self.y, self.x = self.load_data()
+        
+        #self.status = self.compute_status(self.y)
         print('Appliance:', self.appliance_names)
-        print('Sum of ons:', np.sum(self.status, axis=0))
-        print('Total length:', self.status.shape[0])
+        #print('Sum of ons:', np.sum(self.status, axis=0))
+        #print('Total length:', self.status.shape[0])
 
         if stats is None:
-            self.x_mean = np.mean(self.x, axis=0)
-            self.x_std = np.std(self.x, axis=0)
+            x_mean_list=[]
+            x_std_list=[]
+            for i in self.x:
+              self.x_mean = np.mean(i, axis=0)
+              x_mean_list.append(self.x_mean)
+              self.x_std = np.std(i, axis=0)
+              x_std_list.append(self.x_std)
         else: 
             self.x_mean, self.x_std = stats
 
@@ -54,11 +80,11 @@ class AbstractDataset(metaclass=ABCMeta):
         pass
 
     def get_data(self):
-        return self.x, self.y, self.status
+        return self.x, self.y #self.status
 
     def get_original_data(self):
         x_org = self.x * self.x_std + self.x_mean
-        return x_org, self.y, self.status
+        return x_org, self.y #self.status
 
     def get_mean_std(self):
         return self.x_mean, self.x_std
@@ -120,21 +146,25 @@ class AbstractDataset(metaclass=ABCMeta):
     def get_status(self):
         return self.status
 
-    def get_datasets(self):
-        val_end = int(self.val_size * len(self.x))
-        val = NILMDataset(self.x[:val_end], self.y[:val_end], self.status[:val_end],
+    '''def get_datasets(self, train_labels, train_total_power, val_labels, val_total_power, test_labels, test_total_power):
+        #val_end = int(self.val_size * len(self.x))
+        val = NILMDataset(val_labels, val_total_power,
                           self.window_size, self.window_size)
-        train = NILMDataset(self.x[val_end:], self.y[val_end:], self.status[val_end:],
+        train = NILMDataset(train_labels, train_total_power,
                             self.window_size, self.window_stride)
-        return train, val
-
-    def get_bert_datasets(self, mask_prob=0.25):
-        val_end = int(self.val_size * len(self.x))
-        val = NILMDataset(self.x[:val_end], self.y[:val_end], self.status[:val_end],
+        test = NILMDataset(test_labels, test_total_power,
                           self.window_size, self.window_size)
-        train = BERTDataset(self.x[val_end:], self.y[val_end:], self.status[val_end:],
+        return train, val, test'''
+
+    '''def get_bert_datasets(self, train_labels, train_total_power, val_labels, val_total_power,test_labels, test_total_power, mask_prob=0.25):
+        #val_end = int(self.val_size * len(self.x))
+        val = NILMDataset(val_labels, val_total_power,
+                          self.window_size, self.window_size)
+        train = BERTDataset(train_labels, train_total_power,
                             self.window_size, self.window_stride, mask_prob=mask_prob)
-        return train, val
+        test = NILMDataset(test_labels, test_total_power,
+                          self.window_size, self.window_size)
+        return train, val, test'''
 
     def _get_rawdata_root_path(self):
         return Path(RAW_DATASET_ROOT_FOLDER)
@@ -346,3 +376,57 @@ class UK_DALE_Dataset(AbstractDataset):
                 [0] * len(entire_data.columns), self.cutoff, axis=1)
             
         return entire_data.values[:, 0], entire_data.values[:, 1:]
+
+import os
+import torch
+class SYNTHETIC_Dataset(AbstractDataset):
+    @classmethod
+    def code(cls):
+        return 'synthetic'
+
+    @classmethod
+    def _if_data_exists(cls):
+        folder = Path(RAW_DATASET_ROOT_FOLDER).joinpath(cls.code())
+        for split_folder in ['train', 'validation', 'test']:
+            split_folder_path = os.path.join(folder, split_folder)
+            if os.path.isdir(split_folder_path):
+                for root, dirs, files in os.walk(split_folder_path):
+                    for file in files:
+                        if file.endswith(".csv"):
+                            return True
+        return False
+
+    def load_data(self, split='train'):
+      """
+      Load data from CSV files in the specified dataset split folder.
+      
+      Args:
+      - split (str): Name of the split folder to read from ('train', 'validation', or 'test').
+      
+      Returns:
+      - appliance_names_list (list of lists): List of lists containing names of appliances.
+      - total_power_list (list of lists): List of lists containing aggregated values.
+      """
+      assert os.path.isdir(RAW_DATASET_ROOT_FOLDER), f"Invalid directory: {RAW_DATASET_ROOT_FOLDER}"
+      assert split in ['train', 'validation', 'test'], f"Invalid split: {split}"
+
+      appliance_names_list = []
+      total_power_list = []
+      folder = Path(RAW_DATASET_ROOT_FOLDER)
+
+      split_folder_path = folder.joinpath(split)
+      if not os.path.isdir(split_folder_path):
+          raise FileNotFoundError(f"Split folder '{split}' not found in '{RAW_DATASET_ROOT_FOLDER}'")
+
+      for root, dirs, files in os.walk(split_folder_path):
+          for file in files:
+              if file.endswith(".csv"):
+                  df = pd.read_csv(os.path.join(root, file))
+                  appliance_names = df.columns[1:-2].tolist()  # Exclude first and last two columns
+                  total_power = df.iloc[:, -1].tolist()  # Aggregate total power values
+
+                  appliance_names_list.append(appliance_names)
+                  total_power_list.append(total_power)
+
+      return appliance_names_list, total_power_list
+
