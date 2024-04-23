@@ -27,14 +27,14 @@ class Trainer(metaclass=ABCMeta):
         self.model = model.to(self.device)
         self.export_root = Path(export_root)
 
-        self.cutoff = torch.tensor([args.cutoff[i]
-                                    for i in args.appliance_names]).to(self.device)
-        self.threshold = torch.tensor(
-            [args.threshold[i] for i in args.appliance_names]).to(self.device)
-        self.min_on = torch.tensor([args.min_on[i]
-                                    for i in args.appliance_names]).to(self.device)
-        self.min_off = torch.tensor(
-            [args.min_off[i] for i in args.appliance_names]).to(self.device)
+        #self.cutoff = torch.tensor([args.cutoff[i]
+        #                            for i in args.appliance_names]).to(self.device)
+        #self.threshold = torch.tensor(
+        #    [args.threshold[i] for i in args.appliance_names]).to(self.device)
+        #self.min_on = torch.tensor([args.min_on[i]
+        #                            for i in args.appliance_names]).to(self.device)
+        #self.min_off = torch.tensor(
+        #    [args.min_off[i] for i in args.appliance_names]).to(self.device)
 
         self.normalize = args.normalize
         self.denom = args.denom
@@ -46,13 +46,16 @@ class Trainer(metaclass=ABCMeta):
         self.train_loader = train_loader
         self.val_loader = val_loader
 
+        print(train_loader)
+        self.val_loader = val_loader
+        
         self.optimizer = self._create_optimizer()
         if args.enable_lr_schedule:
             self.lr_scheduler = optim.lr_scheduler.StepLR(
                 self.optimizer, step_size=args.decay_step, gamma=args.gamma)
 
-        self.C0 = torch.tensor(args.c0[args.appliance_names[0]]).to(self.device)
-        print('C0: {}'.format(self.C0))
+        #self.C0 = torch.tensor(args.c0[args.appliance_names[0]]).to(self.device)
+        #print('C0: {}'.format(self.C0))
         self.kl = nn.KLDivLoss(reduction='batchmean')
         self.mse = nn.MSELoss()
         self.margin = nn.SoftMarginLoss()
@@ -198,7 +201,6 @@ class Trainer(metaclass=ABCMeta):
                 average_acc = np.mean(np.array(acc_values).reshape(-1))
                 average_f1 = np.mean(np.array(f1_values).reshape(-1))
                 average_rel_err = np.mean(np.array(relative_errors).reshape(-1))
-
                 tqdm_dataloader.set_description('Validation, rel_err {:.2f}, acc {:.2f}, f1 {:.2f}'.format(
                     average_rel_err, average_acc, average_f1))
 
@@ -246,7 +248,7 @@ class Trainer(metaclass=ABCMeta):
                 average_acc = np.mean(np.array(acc_values).reshape(-1))
                 average_f1 = np.mean(np.array(f1_values).reshape(-1))
                 average_rel_err = np.mean(np.array(relative_errors).reshape(-1))
-
+                
                 tqdm_dataloader.set_description('Test, rel_err {:.2f}, acc {:.2f}, f1 {:.2f}'.format(
                     average_rel_err, average_acc, average_f1))
 
