@@ -7,7 +7,7 @@ from model import BERT4NILM
 
 import argparse
 import torch
-
+import os
 
 def train(args, export_root=None, resume=True):
     args.validation_size = 0.1
@@ -17,6 +17,11 @@ def train(args, export_root=None, resume=True):
     elif args.dataset_code == 'uk_dale':
         args.house_indicies = [1, 3, 4, 5]
         dataset = UK_DALE_Dataset(args)
+    elif args.dataset_code == 'synthetic':
+        dataset = SYNTHETIC_Dataset(args)
+        val_labels, val_total_power = dataset.load_data(split='validation')
+        train_labels, train_total_power = dataset.load_data(split='train')
+        test_labels, test_total_power = dataset.load_data(split='test')
 
     x_mean, x_std = dataset.get_mean_std()
     stats = (x_mean, x_std)
@@ -27,8 +32,8 @@ def train(args, export_root=None, resume=True):
         folder_name = '-'.join(args.appliance_names)
         export_root = 'experiments/' + args.dataset_code + '/' + folder_name
 
-    dataloader = NILMDataloader(args, dataset, bert=True)
-    train_loader, val_loader = dataloader.get_dataloaders()
+    dataloader = NILMDataloader(args, train_labels, train_total_power, val_labels, val_total_power, test_labels, test_total_power, bert=True)
+    train_loader, val_loader, test_loader = dataloader.get_dataloaders()
 
     trainer = Trainer(args, model, train_loader,
                     val_loader, stats, export_root)
@@ -50,8 +55,7 @@ def train(args, export_root=None, resume=True):
         args.house_indicies = [2]
         dataset = UK_DALE_Dataset(args, stats)
 
-    dataloader = NILMDataloader(args, dataset)
-    _, test_loader = dataloader.get_dataloaders()
+    
     rel_err, abs_err, acc, prec, recall, f1 = trainer.test(test_loader)
     print('Mean Accuracy:', acc)
     print('Mean F1-Score:', f1)
