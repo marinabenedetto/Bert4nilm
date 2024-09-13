@@ -2,16 +2,15 @@ import torch
 import numpy as np
 from sklearn.metrics import confusion_matrix
 
-
 def get_user_input(args):
     if torch.cuda.is_available():
-        args.device = 'cuda:' + input('Input GPU ID: ')
+        args.device = 0
     else:
         args.device = 'cpu'
 
-    dataset_code = {'r': 'redd_lf', 'u': 'uk_dale'}
-    args.dataset_code = dataset_code[input(
-        'Input r for REDD, u for UK_DALE: ')]
+    #dataset_code = {'r': 'redd_lf', 'u': 'uk_dale', 's': 'synthetic'}
+    #args.dataset_code = dataset_code[input(
+    #    'Input r for REDD, u for UK_DALE, s for SYNTHETIC: ')]
 
     if args.dataset_code == 'redd_lf':
         app_dict = {
@@ -34,8 +33,21 @@ def get_user_input(args):
         args.appliance_names = app_dict[input(
             'Input k, f, w, m or d for target appliance: ')]
 
-    args.num_epochs = int(input('Input training epochs: '))
+    elif args.dataset_code == 'synthetic':
+        app_dict = {
+            'kettle': ['kettle'],
+            'fridge': ['fridge'],
+            'washing_machine': ['washing_machine'],
+            'microwave': ['microwave'],
+            'dishwasher': ['dishwasher'],
+            'ledlight': ['ledlight'],
+        }
+        #args.appliance_names = app_dict[input(
+        #    'Input kettle, fridge, washing_machine, microwave, dishwasher or ledlight for target appliance: ')]
 
+    #args.num_epochs = int(input('Input training epochs: '))
+
+    
 
 def set_template(args):
     args.output_size = len(args.appliance_names)
@@ -123,12 +135,70 @@ def set_template(args):
             'microwave': 1.,
             'dishwasher': 1.
         }
+    elif args.dataset_code == 'synthetic':
+        args.window_stride = 240
+        args.cutoff = {
+            'aggregate': 6000,
+            'kettle': 3100,
+            'fridge': 300,
+            'washing_machine': 2500,
+            'microwave': 3000,
+            'dishwasher': 2500
+        }
 
+        args.threshold = {
+            'kettle': 2000,
+            'fridge': 50,
+            'washing_machine': 20,
+            'microwave': 50,
+            'dishwasher': 10
+        }
+
+        args.min_on = {
+            'kettle': 2,
+            'fridge': 10,
+            'washing_machine': 300,
+            'microwave': 2,
+            'dishwasher': 300
+        }
+
+        args.min_off = {
+            'kettle': 0,
+            'fridge': 2,
+            'washing_machine': 26,
+            'microwave': 5,
+            'dishwasher': 300
+        }
+
+        args.c0 = {
+            'kettle': 1.,
+            'fridge': 1e-6,
+            'washing_machine': 0.01,
+            'microwave': 1.,
+            'dishwasher': 1.
+        }
+
+        args.cutoff_synd = {
+            'aggregate': 6000,
+            'kettle': 2000,
+            'fridge': 100,
+            'washing_machine': 2500,
+            'microwave': 3000,
+            'dishwasher': 2500
+        }
+
+        args.threshold_synd = {
+            'kettle': 1700,
+            'fridge': 40,
+            'washing_machine': 20,
+            'microwave': 200,
+            'dishwasher': 10
+        }
+  
     args.optimizer = 'adam'
     args.lr = 1e-4
     args.enable_lr_schedule = False
     args.batch_size = 128
-
 
 def acc_precision_recall_f1_score(pred, status):
     assert pred.shape == status.shape
