@@ -8,25 +8,76 @@ from pathlib import Path
 from collections import defaultdict
 import torch.utils.data as data_utils
 
-def get_datasets(self, train_labels, train_total_power, val_labels, val_total_power, test_labels, test_total_power):
-            #val_end = int(self.val_size * len(self.x))
-            val = NILMDataset(val_labels, val_total_power,
-                              window_size=480, stride=30)
-            train = NILMDataset(train_labels, train_total_power,
-                                window_size=480, stride=30)
-            test = NILMDataset(test_labels, test_total_power,
-                              window_size=480, stride=30)
-            return train, val, test
+def load_data_generator(split='train'):
+        assert os.path.isdir(RAW_DATASET_ROOT_FOLDER), f"Invalid directory: {RAW_DATASET_ROOT_FOLDER}"
+        assert split in ['train', 'validation', 'test'], f"Invalid split: {split}"
 
-def get_bert_datasets(self, train_labels, train_total_power, val_labels, val_total_power,test_labels, test_total_power, mask_prob=0.25):
-            #val_end = int(self.val_size * len(self.x))
-            val = NILMDataset(val_labels, val_total_power,
-                              window_size=480, stride=30)
-            train = BERTDataset(train_labels, train_total_power,
-                                window_size=480, stride=30, mask_prob=mask_prob)
-            test = NILMDataset(test_labels, test_total_power,
-                              window_size=480, stride=30)
-            return train, val, test
+        folder = Path(RAW_DATASET_ROOT_FOLDER)
+
+        split_folder_path = folder.joinpath(split)
+        if not os.path.isdir(split_folder_path):
+            raise FileNotFoundError(f"Split folder '{split}' not found in '{RAW_DATASET_ROOT_FOLDER}'")
+
+        file_paths = []
+        for root, dirs, files in os.walk(split_folder_path):
+            for file in files:
+                if file.endswith(".csv"):
+                    file_paths.append(os.path.join(root, file))
+                    
+        for file_path in file_paths:
+            df = pd.read_csv(file_path)
+            if not df.empty:
+                    yield df
+
+def load_data(self,df, appliance_names):
+    selected_appliance = appliance_names
+
+    all_appliance_values = None
+    aggregate_values = None
+    status_values = None
+
+    # Scansiona gli elettrodomestici selezionati dall'utente
+    for col in df.columns:
+        if col == selected_appliance[0]:
+            # Se la colonna corrisponde all'elettrodomestico selezionato,
+            # estrai i valori e aggiungili all'array
+            appliance_values = df[col].values
+            if all_appliance_values is None:
+                all_appliance_values = appliance_values
+            else:
+                all_appliance_values = np.vstack((all_appliance_values, appliance_values))
+    
+            # Estrai i valori di aggregazione e di stato
+            aggregate_values = df.iloc[:, -3].values
+            status_values = df.iloc[:, -1].map({'on': 1, 'off': 0}).values
+            
+            # Interrompi il ciclo una volta che hai trovato una corrispondenza
+            break
+    
+    
+
+    return all_appliance_values, aggregate_values, status_values
+
+def get_datasets(self, appliance_names, train_generator, val_generator, test_generator):
+        #val_end = int(self.val_size * len(self.x))
+        val = NILMDataset(appliance_names, val_generator, 
+                          window_size=480, stride=30)
+        train = NILMDataset(appliance_names, train_generator,
+                            window_size=480, stride=30)
+        test = NILMDataset(appliance_names, test_generator,
+                          window_size=480, stride=30)
+        return train, val, test
+
+def get_bert_datasets(self, appliance_names, train_generator, val_generator, test_generator, mask_prob=0.25):
+        #val_end = int(self.val_size * len(self.x))
+        val = NILMDataset(appliance_names, val_generator,
+                          window_size=480, stride=30)
+        train = BERTDataset(appliance_names, train_generator,
+                            window_size=480, stride=30, mask_prob=mask_prob)
+        test = NILMDataset(appliance_names, test_generator,
+                          window_size=480, stride=30)
+        
+        return train, val, test
 
 class AbstractDataset(metaclass=ABCMeta):
     def __init__(self, args, stats=None):
@@ -45,26 +96,31 @@ class AbstractDataset(metaclass=ABCMeta):
         self.window_size = args.window_size
         self.window_stride = args.window_stride
 
-        #self.x, self.y = self.load_data()
-        self.y, self.x = self.load_data()
+        dataset = SYNTHETIC_Dataset.load_data_generator()
+
+        for df in dataset:
+            # Converti il DataFrame in testo strutturato
+            self.x, self.y, self.status = SYNTHETIC_Dataset.load_data(self,df, args.appliance_names)
+            
+            # Se non sono stati trovati valori da estrarre, passa al dataframe successivo
+            if self.x is None:
+                continue
+            #print(self.x)
         
         #self.status = self.compute_status(self.y)
         print('Appliance:', self.appliance_names)
         #print('Sum of ons:', np.sum(self.status, axis=0))
         #print('Total length:', self.status.shape[0])
 
+        #risolvere il problema della std che è a volte più grande della media
         if stats is None:
-            x_mean_list=[]
-            x_std_list=[]
-            for i in self.x:
-              self.x_mean = np.mean(i, axis=0)
-              x_mean_list.append(self.x_mean)
-              self.x_std = np.std(i, axis=0)
-              x_std_list.append(self.x_std)
+            self.x_mean = np.mean(self.x, axis=0)
+            self.x_std = np.std(self.x, ddof=1, axis=0)
         else: 
             self.x_mean, self.x_std = stats
 
         self.x = (self.x - self.x_mean) / self.x_std
+       
 
     @classmethod
     @abstractmethod
@@ -80,14 +136,15 @@ class AbstractDataset(metaclass=ABCMeta):
         pass
 
     def get_data(self):
-        return self.x, self.y #self.status
+        return self.x, self.y, self.status
 
     def get_original_data(self):
         x_org = self.x * self.x_std + self.x_mean
-        return x_org, self.y #self.status
+        return self.y, x_org, self.status
 
     def get_mean_std(self):
-        return self.x_mean, self.x_std
+       return self.x_mean, self.x_std
+
 
     def compute_status(self, data):
         status = np.zeros(data.shape)
@@ -146,25 +203,6 @@ class AbstractDataset(metaclass=ABCMeta):
     def get_status(self):
         return self.status
 
-    '''def get_datasets(self, train_labels, train_total_power, val_labels, val_total_power, test_labels, test_total_power):
-        #val_end = int(self.val_size * len(self.x))
-        val = NILMDataset(val_labels, val_total_power,
-                          self.window_size, self.window_size)
-        train = NILMDataset(train_labels, train_total_power,
-                            self.window_size, self.window_stride)
-        test = NILMDataset(test_labels, test_total_power,
-                          self.window_size, self.window_size)
-        return train, val, test'''
-
-    '''def get_bert_datasets(self, train_labels, train_total_power, val_labels, val_total_power,test_labels, test_total_power, mask_prob=0.25):
-        #val_end = int(self.val_size * len(self.x))
-        val = NILMDataset(val_labels, val_total_power,
-                          self.window_size, self.window_size)
-        train = BERTDataset(train_labels, train_total_power,
-                            self.window_size, self.window_stride, mask_prob=mask_prob)
-        test = NILMDataset(test_labels, test_total_power,
-                          self.window_size, self.window_size)
-        return train, val, test'''
 
     def _get_rawdata_root_path(self):
         return Path(RAW_DATASET_ROOT_FOLDER)
@@ -379,6 +417,11 @@ class UK_DALE_Dataset(AbstractDataset):
 
 import os
 import torch
+from tqdm import tqdm
+import datetime
+
+
+
 class SYNTHETIC_Dataset(AbstractDataset):
     @classmethod
     def code(cls):
@@ -396,37 +439,58 @@ class SYNTHETIC_Dataset(AbstractDataset):
                             return True
         return False
 
-    def load_data(self, split='train'):
-      """
-      Load data from CSV files in the specified dataset split folder.
-      
-      Args:
-      - split (str): Name of the split folder to read from ('train', 'validation', or 'test').
-      
-      Returns:
-      - appliance_names_list (list of lists): List of lists containing names of appliances.
-      - total_power_list (list of lists): List of lists containing aggregated values.
-      """
-      assert os.path.isdir(RAW_DATASET_ROOT_FOLDER), f"Invalid directory: {RAW_DATASET_ROOT_FOLDER}"
-      assert split in ['train', 'validation', 'test'], f"Invalid split: {split}"
+    @classmethod
+    def load_data_generator(cls, split='train'):
+        assert os.path.isdir(RAW_DATASET_ROOT_FOLDER), f"Invalid directory: {RAW_DATASET_ROOT_FOLDER}"
+        assert split in ['train', 'validation', 'test'], f"Invalid split: {split}"
 
-      appliance_names_list = []
-      total_power_list = []
-      folder = Path(RAW_DATASET_ROOT_FOLDER)
+        folder = Path(RAW_DATASET_ROOT_FOLDER)
 
-      split_folder_path = folder.joinpath(split)
-      if not os.path.isdir(split_folder_path):
-          raise FileNotFoundError(f"Split folder '{split}' not found in '{RAW_DATASET_ROOT_FOLDER}'")
+        split_folder_path = folder.joinpath(split)
+        if not os.path.isdir(split_folder_path):
+            raise FileNotFoundError(f"Split folder '{split}' not found in '{RAW_DATASET_ROOT_FOLDER}'")
 
-      for root, dirs, files in os.walk(split_folder_path):
-          for file in files:
-              if file.endswith(".csv"):
-                  df = pd.read_csv(os.path.join(root, file))
-                  appliance_names = df.columns[1:-2].tolist()  # Exclude first and last two columns
-                  total_power = df.iloc[:, -1].tolist()  # Aggregate total power values
+        file_paths = []
+        for root, dirs, files in os.walk(split_folder_path):
+            for file in files:
+                if file.endswith(".csv"):
+                    file_paths.append(os.path.join(root, file))
+                    
+        for file_path in file_paths:
+            df = pd.read_csv(file_path)
+            if not df.empty:
+                    yield df
 
-                  appliance_names_list.append(appliance_names)
-                  total_power_list.append(total_power)
 
-      return appliance_names_list, total_power_list
+    @staticmethod
+    def load_data(self,df, appliance_names):
+        selected_appliance = appliance_names
+
+        all_appliance_values = None
+        aggregate_values = None
+        status_values = None
+
+        # Scansiona gli elettrodomestici selezionati dall'utente
+        for col in df.columns:
+            if col == selected_appliance[0]:
+                # Se la colonna corrisponde all'elettrodomestico selezionato,
+                # estrai i valori e aggiungili all'array
+                appliance_values = df[col].values
+                if all_appliance_values is None:
+                    all_appliance_values = appliance_values
+                else:
+                    all_appliance_values = np.vstack((all_appliance_values, appliance_values))
+        
+                # Estrai i valori di aggregazione e di stato
+                aggregate_values = df.iloc[:, -3].values
+                status_values = df.iloc[:, -1].map({'on': 1, 'off': 0}).values
+                
+                # Interrompi il ciclo una volta che hai trovato una corrispondenza
+                break
+        
+        
+
+        return all_appliance_values, aggregate_values, status_values
+
+
 
